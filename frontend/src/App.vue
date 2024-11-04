@@ -8,9 +8,17 @@
       >
         Ping Tool
       </div>
+      <div 
+        class="tool-item" 
+        :class="{ active: currentTool === 'queryMethod' }"
+        @click="currentTool = 'queryMethod'"
+      >
+        Query Method
+      </div>
     </div>
     <div class="content">
       <PingTool v-if="currentTool === 'ping'" />
+      <QueryMethodTool v-if="currentTool === 'queryMethod'" />
     </div>
   </div>
 </template>
@@ -18,6 +26,7 @@
 <script setup>
 import { ref } from 'vue'
 import PingTool from './components/PingTool.vue'
+import QueryMethodTool from './components/QueryMethodTool.vue'
 
 const currentTool = ref('ping') // 设置默认值为 'ping'
 </script>
@@ -77,6 +86,10 @@ const currentTool = ref('ping') // 设置默认值为 'ping'
   
   .content {
     height: calc(100vh - 200px);
+    flex: 1;
+  padding: 20px;
+  overflow-x: hidden; /* 防止水平滚动 */
+  min-width: 0;      /* 确保 flex 子项可以正确收缩 */
   }
 }
 

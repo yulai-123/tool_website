@@ -1,257 +1,240 @@
 <template>
-    <div class="query-method-tool">
-      <!-- 左右布局容器 -->
-      <div class="layout-container">
-        <!-- 左侧ABI输入 -->
-        <div class="left-panel">
-          <div class="input-group">
-            <label>ABI JSON:</label>
-            <textarea 
-              v-model="abiInput" 
-              placeholder="请输入ABI JSON内容..."
-              class="textarea-input"
-            ></textarea>
-          </div>
-        </div>
-  
-        <!-- 右侧面板 -->
-        <div class="right-panel">
-          <!-- 上部分：输入和按钮 -->
-          <div class="top-section">
-  <div class="input-group encoded-data">
-    <div class="input-row">
-  <label>编码后的调用数据:</label>
-  <textarea
-    v-model="encodedData" 
-    placeholder="0x开头的调用数据..."
-    class="text-input multi-line"
-  ></textarea>
-</div>
-  </div>
-  <button @click="decodeMethod" class="decode-button">解析</button>
-</div>
-  
-          <!-- 下部分：输出区域 -->
-          <div class="bottom-section">
-            <div class="output-group">
-              <label>调用方法:</label>
-              <div class="output-box">{{ methodName }}</div>
-            </div>
-            <div class="output-group">
-              <label>实际参数:</label>
-              <div class="output-box">{{ params }}</div>
-            </div>
-          </div>
-        </div>
-      </div>
+  <!-- 主容器：垂直布局 -->
+  <div class="tool-container">
+    <!-- 1. ABI输入区域 -->
+    <div class="input-section">
+      <label>ABI JSON:</label>
+      <textarea 
+        v-model="abiInput" 
+        placeholder="请输入ABI JSON内容..."
+        class="input-box abi-input"
+      ></textarea>
     </div>
-  </template>
+
+    <!-- 2. 调用数据输入区域 -->
+    <div class="input-section">
+      <label>编码后的调用数据:</label>
+      <textarea
+        v-model="encodedData" 
+        placeholder="0x开头的调用数据..."
+        class="input-box data-input"
+      ></textarea>
+    </div>
+
+    <!-- 3. 解析按钮 -->
+    <div class="button-section">
+      <button @click="decodeMethod" class="decode-button">解析</button>
+    </div>
+
+    <!-- 4. 方法名称输出区域 -->
+    <div class="output-section">
+      <label>调用方法:</label>
+      <div class="output-box method-output">{{ methodOutput }}</div>
+    </div>
+
+    <!-- 5. 参数表格展示区域 -->
+    <div class="output-section">
+      <label>实际参数:</label>
+      <table class="params-table" v-if="parsedParams.length">
+        <thead>
+          <tr>
+            <th>字段名称</th>
+            <th>字段类型</th>
+            <th>字段值</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(param, index) in parsedParams" :key="index">
+            <td>{{ param.name }}</td>
+            <td>{{ param.type }}</td>
+            <td>{{ param.value }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { Interface } from '@ethersproject/abi'
 
+// 定义响应式数据
 const abiInput = ref('')
 const encodedData = ref('')
 const methodName = ref('')
-const params = ref('')
+const methodSignature = ref('') // 新增：存储方法签名
+const decodedParams = ref(null)
+const methodInputs = ref([]) // 新增：存储方法的输入参数定义
 
-const decodeMethod = () => {
+// 修改：方法输出展示
+const methodOutput = computed(() => {
+  if (!methodName.value) return ''
+  return `${methodName.value}(${methodInputs.value.map(input => `${input.type} ${input.name}`).join(', ')})`
+})
+
+// 修改：解析参数为表格数据格式
+const parsedParams = computed(() => {
   try {
-    // 检查输入
+    if (!decodedParams.value || !methodInputs.value) return []
+    
+    // 使用方法定义的输入参数来构建结果
+    return methodInputs.value.map((input, index) => {
+      const paramValue = decodedParams.value[index]
+      return {
+        name: input.name,
+        type: input.type,
+        // 使用 !== undefined 来检查值是否存在
+        value: paramValue !== undefined ? 
+          (typeof paramValue === 'boolean' ? paramValue.toString() : JSON.stringify(paramValue)) 
+          : ''
+      }
+    })
+  } catch (error) {
+    console.error('参数解析错误:', error)
+    return []
+  }
+})
+
+// 修改：解析方法
+const decodeMethod = async () => {
+  try {
     if (!abiInput.value || !encodedData.value) {
-      throw new Error('请输入ABI和调用数据')
+      throw new Error('请输入完整的ABI和调用数据')
     }
 
-    // 解析ABI
-    let abiJSON
-    try {
-      abiJSON = JSON.parse(abiInput.value)
-    } catch (e) {
-      throw new Error('ABI格式不正确')
-    }
-
-    // 创建接口实例
+    const abiJSON = JSON.parse(abiInput.value)
     const iface = new Interface(abiJSON)
-
-    // 解析调用数据
     const decodedData = iface.parseTransaction({ data: encodedData.value })
     
-    // 更新输出
+    // 更新方法名和签名
     methodName.value = decodedData.name
-    params.value = JSON.stringify(decodedData.args, null, 2)
-
+    
+    // 从ABI中找到对应方法的定义
+    const methodDef = abiJSON.find(item => 
+      item.name === decodedData.name && 
+      item.type === 'function'
+    )
+    
+    // 保存方法的输入参数定义
+    methodInputs.value = methodDef ? methodDef.inputs : []
+    
+    // 保存解析后的参数值
+    decodedParams.value = decodedData.args
+    
   } catch (error) {
     methodName.value = 'Error'
-    params.value = error.message
+    methodInputs.value = []
+    decodedParams.value = null
+    console.error('解析错误:', error)
   }
 }
 </script>
 
-  
-  <style scoped>
-  .query-method-tool {
-    padding: 20px;
-    width: 100%;
-    height: 100%;
-  }
-  
-  .layout-container {
-    display: flex;
-    gap: 20px;
-    height: 100%;
-    min-width: 0;
-  }
-  
-  .left-panel {
-    flex: 0 0 400px; /* 固定宽度 */
-    height: 100%;
-    min-width: 0;
-  }
-  
-  .right-panel {
-    flex: 1;
+<style scoped>
+/* 主容器样式 */
+.tool-container {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  min-width: 0;       /* 移除固定最小宽度，允许收缩 */
-  /* width: 100%;        使用相对宽度 */
-  width: 600px;
-  }
-  
-  /* 顶部区域布局 */
-.top-section {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  width: 100%;
-  flex-wrap: nowrap;    /* 防止换行 */
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
 }
-  
-  .encoded-data {
-    flex: 1;
-    min-width: 200px; /* 设置最小宽度 */
-  }
-  
-  .bottom-section {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    min-width: 0;
-    flex-direction: column;
-  }
-  
-  .input-group, .output-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  
-  .textarea-input {
-    width: 100%;
-    height: calc(100vh - 150px);
-    padding: 12px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-family: monospace;
-    resize: vertical;
-  }
-  
-  .decode-button {
-    padding: 8px 24px;
-    height: 38px;
-    background-color: #4CAF50;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-    white-space: nowrap;
-    min-width: 80px;
-    flex: 0 0 auto;
-  }
-  
-  .decode-button:hover {
-    background-color: #45a049;
-  }
-  
-  .output-box {
-    padding: 12px;
+
+/* 输入区域样式 */
+.input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 600px;
+}
+
+/* 输入框通用样式 */
+.input-box {
+  width: 100%;
+  padding: 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
-  background-color: #f8f9fa;
   font-family: monospace;
   font-size: 14px;
   line-height: 1.5;
-  white-space: pre-wrap;
-  overflow: auto;
-  }
-  
-  label {
-    font-weight: bold;
-    color: #333;
-  }
+}
 
-  .input-row {
+/* ABI输入框特殊样式 */
+.abi-input {
+  height: 200px;
+  resize: vertical;
+  min-height: 150px;
+}
+
+/* 调用数据输入框特殊样式 */
+.data-input {
+  height: 100px;
+  resize: vertical;
+  min-height: 60px;
+}
+
+/* 按钮区域样式 */
+.button-section {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
+  justify-content: flex-start;
 }
 
-.input-row label {
-  white-space: nowrap;
-  min-width: fit-content;
-  flex: 0 0 auto;
+/* 解析按钮样式 */
+.decode-button {
+  padding: 8px 24px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s;
 }
 
-.text-input {
-  padding: 8px 12px;
+.decode-button:hover {
+  background-color: #45a049;
+}
+
+/* 输出区域样式 */
+.output-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 方法输出框样式 */
+.method-output {
+  padding: 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
-  font-family: monospace;
-  font-size: 14px;
+  background-color: #f8f9fa;
+  min-height: 42px;
+}
+
+/* 参数表格样式 */
+.params-table {
   width: 100%;
-  flex: 1;
-  min-width: 0;
+  border-collapse: collapse;
+  background-color: #fff;
 }
 
-.top-section {
-  display: flex;
-  flex-direction: column;  /* 改为竖直方向 */
-  gap: 16px;
-  width: 100%;
+.params-table th,
+.params-table td {
+  padding: 12px;
+  border: 1px solid #ddd;
+  text-align: left;
 }
 
-.input-group.encoded-data {
-  flex: 1;
-  max-width: 100%;
+.params-table th {
+  background-color: #f8f9fa;
+  font-weight: bold;
 }
 
-/* 添加多行文本框样式 */
-.text-input.multi-line {
-  height: 80px;           /* 设置合适的高度 */
-  resize: vertical;       /* 允许垂直调整大小 */
-  min-height: 60px;      /* 最小高度 */
-  max-height: 200px;     /* 最大高度 */
-  line-height: 1.4;      /* 行高 */
-  white-space: pre-wrap; /* 保留换行 */
-  overflow-y: auto;      /* 内容过多时显示滚动条 */
+/* 标签样式 */
+label {
+  font-weight: bold;
+  color: #333;
 }
-
-/* 调用方法输出框样式 */
-.output-group:first-child .output-box {
-  height: 100px;
-  min-height: 100px;
-}
-
-/* 实际参数输出框样式 */
-.output-group:last-child .output-box {
-  height: 400px;
-  min-height: 200px;
-  resize: vertical;     /* 允许垂直方向调整大小 */
-  width: 100%;
-}
-
-
-  </style>
+</style>

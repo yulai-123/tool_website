@@ -17,8 +17,8 @@
       </div>
     </div>
     <div class="content">
-      <PingTool v-if="currentTool === 'ping'" />
-      <QueryMethodTool v-if="currentTool === 'queryMethod'" />
+      <PingTool v-show="currentTool === 'ping'" />
+      <QueryMethodTool v-show="currentTool === 'queryMethod'" />
     </div>
   </div>
 </template>
